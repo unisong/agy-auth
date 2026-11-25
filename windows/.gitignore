@@ -1,0 +1,16 @@
+**/bin/
+**/private/
+**/toolchain/
+**/快捷切号/
+**/settings.json
+**/ui-state.json
+**/ui-check*.png
+**/ui-backup/
+**/ui-verification.json
+**/verification.json
+**/deployment.json
+**/completion-verification.txt
+**/*.log
+**/*.exe
+**/*.lnk
+**/*.tmp

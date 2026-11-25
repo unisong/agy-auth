@@ -1,0 +1,71 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Antigravity 账号管理" Width="1020" Height="650" MinWidth="900" MinHeight="590" WindowStartupLocation="CenterScreen">
+  <Window.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="Theme.xaml"/></ResourceDictionary.MergedDictionaries></ResourceDictionary></Window.Resources>
+  <Grid x:Name="Root" Margin="28,24">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <Grid Margin="0,0,0,20">
+      <StackPanel><TextBlock Text="Antigravity" FontSize="26" FontWeight="SemiBold"/><TextBlock Text="账号管理 · 在订阅与 Cloud 配置之间切换" Foreground="#64748B" Margin="0,5,0,0"/></StackPanel>
+      <Border HorizontalAlignment="Right" VerticalAlignment="Top" Background="#E9EFFB" CornerRadius="6" Padding="10,5" Margin="0,6,0,0"><TextBlock Text="本机账号库" FontSize="12" Foreground="#4C6388"/></Border>
+    </Grid>
+    <Border Grid.Row="1" Background="White" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Margin="0,0,0,22">
+      <Grid Margin="20,17">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <StackPanel>
+          <TextBlock Text="当前凭据" Style="{StaticResource Muted}"/>
+          <TextBlock x:Name="CurrentEmail" Text="正在读取账号配置…" FontSize="20" FontWeight="SemiBold" Margin="0,6,0,7" TextTrimming="CharacterEllipsis"/>
+          <TextBlock x:Name="CurrentProject" Style="{StaticResource Muted}" Text="读取本机凭据状态"/>
+        </StackPanel>
+        <Border x:Name="CurrentBadge" Grid.Column="1" VerticalAlignment="Center" MinWidth="158" Background="#EFF6FF" CornerRadius="6" Padding="12,7" Margin="16,0,0,0">
+          <TextBlock x:Name="CurrentMode" Text="读取中" HorizontalAlignment="Center" Foreground="#2563EB" FontSize="13" FontWeight="SemiBold"/>
+        </Border>
+      </Grid>
+    </Border>
+    <Grid Grid.Row="2" Margin="0,0,0,12">
+      <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><TextBlock Text="已保存配置" FontSize="16" FontWeight="SemiBold"/><TextBlock x:Name="AccountCount" Text="0 个" Foreground="#64748B" Margin="10,2,0,0" FontSize="12"/></StackPanel>
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+        <Button x:Name="RefreshButton" Content="刷新" Margin="0,0,8,0" ToolTip="重新读取本机凭据与账号列表"/>
+        <Button x:Name="SaveButton" Content="保存当前登录" Margin="0,0,8,0"/>
+        <Button x:Name="AddButton" Content="＋ 添加账号"/>
+      </StackPanel>
+    </Grid>
+    <Border Grid.Row="3" CornerRadius="9" BorderThickness="1" BorderBrush="#E2E8F0" Background="White" ClipToBounds="True">
+      <Grid>
+        <DataGrid x:Name="AccountList" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
+                  CanUserReorderColumns="False" CanUserResizeRows="False" CanUserSortColumns="False" SelectionMode="Single" SelectionUnit="FullRow"
+                  HeadersVisibility="Column" GridLinesVisibility="None" BorderThickness="0" Background="White" RowHeaderWidth="0"
+                  ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
+          <DataGrid.Columns>
+            <DataGridTemplateColumn Header="账号 / 配置" Width="2.2*"><DataGridTemplateColumn.CellTemplate><DataTemplate>
+              <StackPanel ToolTip="{Binding Email}"><TextBlock Text="{Binding Email}" FontSize="14" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding Alias}" Foreground="#64748B" FontSize="12" Margin="0,5,0,0" TextTrimming="CharacterEllipsis"/></StackPanel>
+            </DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+            <DataGridTemplateColumn Header="使用模式" Width="120"><DataGridTemplateColumn.CellTemplate><DataTemplate>
+              <Border Background="{Binding ModeBackground}" CornerRadius="5" Padding="8,5" HorizontalAlignment="Left"><TextBlock Text="{Binding Mode}" FontSize="12" Foreground="{Binding ModeForeground}"/></Border>
+            </DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+            <DataGridTemplateColumn Header="Cloud 项目 / 地区" Width="2.3*"><DataGridTemplateColumn.CellTemplate><DataTemplate>
+              <StackPanel ToolTip="{Binding Project}"><TextBlock Text="{Binding Project}" FontSize="12" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding Region}" FontSize="12" Foreground="#64748B" Margin="0,5,0,0"/></StackPanel>
+            </DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+            <DataGridTemplateColumn Header="状态" Width="85"><DataGridTemplateColumn.CellTemplate><DataTemplate><TextBlock Text="{Binding Status}" Foreground="#15805A" FontSize="12"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+          </DataGrid.Columns>
+        </DataGrid>
+        <StackPanel x:Name="EmptyState" Visibility="Collapsed" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="0,34,0,0">
+          <TextBlock Text="还没有保存账号" FontSize="16" HorizontalAlignment="Center"/>
+          <TextBlock Text="添加 Google 账号，或保存官方客户端的当前登录。" Style="{StaticResource Muted}" Margin="0,8,0,0"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+    <Grid Grid.Row="4" Margin="0,16,0,14">
+      <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+        <Button x:Name="ShortcutButton" Content="生成一键入口" IsEnabled="False"/>
+        <TextBlock x:Name="SelectionHint" Text="请先选择一个配置" FontSize="12" Foreground="#64748B" VerticalAlignment="Center" Margin="12,0,0,0" MaxWidth="230" TextTrimming="CharacterEllipsis"/>
+      </StackPanel>
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+        <Button x:Name="PreviousButton" Content="切回上个" Margin="0,0,10,0"/>
+        <Button x:Name="SwitchButton" Content="切换并启动" Style="{StaticResource PrimaryButton}" Padding="24,10" IsEnabled="False"/>
+      </StackPanel>
+    </Grid>
+    <StackPanel Grid.Row="5">
+      <TextBlock Text="切换会重启 Antigravity，请先保存正在进行的任务。" Style="{StaticResource Muted}"/>
+      <TextBlock Text="此处显示本机凭据；Cloud 赠金抵扣与实际费用以 Google Cloud 为准。" Style="{StaticResource Muted}" Margin="0,4,0,0"/>
+    </StackPanel>
+  </Grid>
+</Window>

@@ -6,6 +6,7 @@ Start here, then follow the topic-specific source.
 
 - [README](../README.md) — install, quick start, commands, updates
 - [User guide](user-guide.md) — storage, quota, OAuth, JSON, environment variables
+- [Windows account manager](../windows/README.md) — optional Chinese WPF GUI, local setup and verification
 - [Development](development.md) — build, install from source, verification, packaging
 - [Contributing](../CONTRIBUTING.md) — setup, pull requests, safe credential testing
 - [Security](../SECURITY.md) — reporting, stored credentials, trust model

@@ -20,6 +20,8 @@
 
 ## Install
 
+This fork also includes an optional **[Windows 中文账号管理界面](windows/README.md)** with high-DPI rendering, remembered window placement, and console-free shortcuts. Build it locally from source; credentials and machine-specific settings are not part of the repository.
+
 npm is the recommended install:
 
 ```shell

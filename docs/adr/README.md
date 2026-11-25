@@ -28,6 +28,7 @@ Use the next number. Statuses: `Proposed`, `Accepted`, `Superseded`, `Deprecated
 | [0003](0003-per-account-installation-id.md) | Accepted | Keep a CLI installation id per account and restore it on switch |
 | [0004](0004-per-account-desktop-updater-id.md) | Accepted | Keep a Desktop updater id per account and restore it on desktop switch |
 | [0005](0005-gcp-paygo-accounts.md) | Accepted | Support Google Cloud Project (Pay As You Go) accounts alongside consumer accounts |
+| [0006](0006-windows-account-manager.md) | Accepted | Publish an optional source-only Windows GUI and console-free launcher |
 
 ## Template
 

@@ -156,6 +156,8 @@ No baselines for secrets, keyring-boundary, atomic-write, or permission violatio
 
 ## Troubleshooting
 
+The optional Windows wrapper has additional checks in `windows/Verify.ps1`, after `windows/Setup.ps1`: synthetic UI rendering, window-placement round trips, file-backend credential fixtures, console-free startup, and a child-inherited-pipe regression. These complement the standard harness and do not make the Windows host pass Unix-specific upstream tests.
+
 - `harness verify --profile fast` needs Go only; `full`/`ci` also need Node 18+ and npm.
 - `harness doctor` reports missing tools, version drift, broken docs links, contract failures, lint/secret findings, and whether hooks are installed.
 - If `full`/`ci` fails at npm packaging, run `node scripts/build-npm.mjs --current` (or `--all`) directly; the harness calls the same script.
