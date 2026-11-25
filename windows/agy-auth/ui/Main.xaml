@@ -54,11 +54,13 @@
       </Grid>
     </Border>
     <Grid Grid.Row="4" Margin="0,16,0,14">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
       <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+        <Button x:Name="RemoveButton" Content="删除配置" Foreground="#B42318" BorderBrush="#F0C4BE" IsEnabled="False" Margin="0,0,8,0" ToolTip="从本机账号库移除选中配置，保留当前登录"/>
         <Button x:Name="ShortcutButton" Content="生成一键入口" IsEnabled="False"/>
-        <TextBlock x:Name="SelectionHint" Text="请先选择一个配置" FontSize="12" Foreground="#64748B" VerticalAlignment="Center" Margin="12,0,0,0" MaxWidth="230" TextTrimming="CharacterEllipsis"/>
+        <TextBlock x:Name="SelectionHint" Text="请先选择一个配置" FontSize="12" Foreground="#64748B" VerticalAlignment="Center" Margin="12,0,12,0" MaxWidth="180" TextTrimming="CharacterEllipsis"/>
       </StackPanel>
-      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+      <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
         <Button x:Name="PreviousButton" Content="切回上个" Margin="0,0,10,0"/>
         <Button x:Name="SwitchButton" Content="切换并启动" Style="{StaticResource PrimaryButton}" Padding="24,10" IsEnabled="False"/>
       </StackPanel>

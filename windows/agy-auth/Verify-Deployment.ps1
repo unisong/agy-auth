@@ -31,4 +31,29 @@ try {
     if (![IO.File]::ReadAllText($snapshot.FullName).StartsWith('agy-auth-encrypted:v1:')) { throw '账号快照没有使用加密格式。' }
     $null = Invoke-AuthJson -Arguments @('switch','--target=cli','-') -Environment $environment
     Write-Output 'WINDOWS_ISOLATED_PROFILE_SWITCH_OK'
+    $saved = Invoke-AuthJson -Arguments @('list','--no-sync','--no-usage') -Environment $environment
+    $pro = @($saved.accounts | Where-Object { $_.alias -eq 'fixture-pro' })[0]
+    $cloud = @($saved.accounts | Where-Object { $_.alias -eq 'fixture-cloud' })[0]
+    $liveHash = (Get-FileHash -LiteralPath $environment.AGY_AUTH_AGY_TOKEN_FILE).Hash
+    $settingsHash = (Get-FileHash -LiteralPath $settingsPath).Hash
+    $rejected = $false
+    try { $null = Remove-SavedProfile -ProfileId $pro.email -Environment $environment }
+    catch { $rejected = $true }
+    if (!$rejected) { throw '删除操作接受了邮箱而不是精确配置 ID。' }
+    $null = Remove-SavedProfile -ProfileId $pro.id -Environment $environment
+    $remaining = Invoke-AuthJson -Arguments @('list','--no-sync','--no-usage') -Environment $environment
+    if (@($remaining.accounts).Count -ne 1 -or $remaining.accounts[0].id -ne $cloud.id) { throw '删除订阅配置误删了同邮箱的 Cloud 配置。' }
+    $null = Remove-SavedProfile -ProfileId $cloud.id -Environment $environment
+    $remaining = Invoke-AuthJson -Arguments @('list','--no-sync','--no-usage') -Environment $environment
+    if (@($remaining.accounts).Count -ne 0 -or !$remaining.current -or $remaining.current.stored) { throw '删除当前配置后列表或当前登录状态不正确。' }
+    if ($remaining.current.auth_method -ne 'gcp' -or $remaining.current.project_id -ne 'fixture-cloud-project') { throw '删除配置改变了当前计费模式。' }
+    if ((Get-FileHash -LiteralPath $environment.AGY_AUTH_AGY_TOKEN_FILE).Hash -ne $liveHash -or (Get-FileHash -LiteralPath $settingsPath).Hash -ne $settingsHash) { throw '删除保存配置修改了当前凭据或设置。' }
+    foreach ($id in @($pro.id,$cloud.id)) {
+        if (Test-Path -LiteralPath (Join-Path $checkRoot "accounts\accounts\$id.json")) { throw '删除后仍保留对应账号快照。' }
+    }
+    $rejected = $false
+    try { $null = Remove-SavedProfile -ProfileId $cloud.id -Environment $environment }
+    catch { $rejected = $true }
+    if (!$rejected) { throw '不存在的配置仍可被重复删除。' }
+    Write-Output 'WINDOWS_ISOLATED_PROFILE_REMOVE_OK: exact ID, same-email isolation, live credential/settings retained, empty list, stale ID rejected'
 } finally { Remove-LoginWorkspace $checkRoot }

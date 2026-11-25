@@ -69,6 +69,29 @@ function Request-AccountDetails {
     return [PSCustomObject]@{ Email=$emailInput.Text.Trim(); Alias=$aliasInput.Text.Trim(); Cloud=[bool]$cloudCheck.IsChecked; Project=$projectInput.Text.Trim() }
 }
 
+function New-RemoveProfileDialog($Account) {
+    $dialog = New-ManagerWindow 'RemoveProfile'
+    $dialog.Owner = $script:MainForm
+    $dialog.FindName('ProfileEmail').Text = [string]$Account.email
+    $mode = if ($Account.auth_method -eq 'gcp') { 'Cloud 按量计费' } else { 'Google 订阅模式' }
+    $alias = if ($Account.alias) { $Account.alias } else { '未设置别名' }
+    $details = "别名：$alias`r`n模式：$mode"
+    if ($Account.auth_method -eq 'gcp') { $details += "`r`n项目：$($Account.project_id)`r`n地区：$($Account.region)" }
+    $dialog.FindName('ProfileDetails').Text = $details
+    if ($Account.active) { $dialog.FindName('CurrentNotice').Visibility = 'Visible' }
+    $dialog.FindName('ConfirmRemoveButton').Add_Click({ param($sender, $eventArgs) [Windows.Window]::GetWindow($sender).DialogResult = $true })
+    $dialog.Add_ContentRendered({ param($sender, $eventArgs) [void]$sender.FindName('CancelRemoveButton').Focus() })
+    return $dialog
+}
+
+function Remove-SelectedProfile {
+    $account = Get-SelectedProfile
+    if (!$account.stored) { throw '请选择已保存的配置。' }
+    $dialog = New-RemoveProfileDialog $account
+    if ($dialog.ShowDialog() -ne $true) { return }
+    Run-UiOperation { $null = Remove-SavedProfile -ProfileId $account.id }
+}
+
 function Add-GoogleAccount($Details) {
     $loginDir = Join-Path (Join-Path $script:DeploymentRoot 'private\login') ([Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $loginDir -Force | Out-Null
@@ -154,13 +177,14 @@ function Add-GoogleAccount($Details) {
 
 $script:MainForm = New-ManagerWindow 'Main'
 $list = $script:MainForm.FindName('AccountList')
-$script:Buttons = @('SwitchButton','PreviousButton','AddButton','SaveButton','RefreshButton','ShortcutButton') | ForEach-Object { $script:MainForm.FindName($_) }
+$script:Buttons = @('SwitchButton','PreviousButton','AddButton','SaveButton','RefreshButton','ShortcutButton','RemoveButton') | ForEach-Object { $script:MainForm.FindName($_) }
 $script:Busy = $false
 
 function Update-SelectionState {
     $selected = $list.SelectedItem
     $script:Buttons[0].IsEnabled = !$script:Busy -and $null -ne $selected
     $script:Buttons[5].IsEnabled = !$script:Busy -and $null -ne $selected
+    $script:Buttons[6].IsEnabled = !$script:Busy -and $null -ne $selected -and $selected.Account.stored
     $script:MainForm.FindName('SelectionHint').Text = $(if ($script:Busy) { '正在处理，请稍候…' } elseif ($selected) { '已选择：' + $selected.Alias } else { '请先选择一个配置' })
 }
 
@@ -221,6 +245,7 @@ function Get-SelectedProfile {
 }
 
 $list.Add_SelectionChanged({ Update-SelectionState })
+$script:Buttons[6].Add_Click({ try { Remove-SelectedProfile } catch { Show-OperationError $_ } })
 $script:Buttons[0].Add_Click({ Run-UiOperation { $account = Get-SelectedProfile; $null = Switch-AuthProfile $account.id } })
 $script:Buttons[1].Add_Click({ Run-UiOperation { $null = Switch-AuthProfile '-' } })
 $script:Buttons[2].Add_Click({ Run-UiOperation { $details = Request-AccountDetails; if ($details) { $null = Add-GoogleAccount $details } } })
@@ -244,7 +269,7 @@ $script:Buttons[5].Add_Click({ Run-UiOperation {
 if ($SelfTest) {
     # Never read the real keyring or account registry during verification.
     function Get-AuthAccounts {
-        $account = [PSCustomObject]@{ id='preview-cloud'; active=$true; email='writer@example.com'; alias='cloud-credit'; auth_method='gcp'; project_id='example-project'; region='global' }
+        $account = [PSCustomObject]@{ id='preview-cloud'; stored=$true; active=$true; email='writer@example.com'; alias='cloud-credit'; auth_method='gcp'; project_id='example-project'; region='global' }
         return [PSCustomObject]@{accounts=@($account); current=$account}
     }
     function Export-UiPreview($Window, [string]$File, [double]$Scale = 1) {
@@ -273,21 +298,24 @@ if ($SelfTest) {
         $Window.UpdateLayout()
     }
     try {
-        if ($list.Columns.Count -ne 4 -or $script:Buttons.Count -ne 6) { throw '界面组件检查失败。' }
+        if ($list.Columns.Count -ne 4 -or $script:Buttons.Count -ne 7) { throw '界面组件检查失败。' }
         Show-TestWindow $script:MainForm
         $script:Buttons[4].RaiseEvent((New-Object Windows.RoutedEventArgs([Windows.Controls.Button]::ClickEvent)))
         Export-UiPreview $script:MainForm 'ui-check.png'
         Export-UiPreview $script:MainForm 'ui-check-150.png' 1.5
         Export-UiPreview $script:MainForm 'ui-check-200.png' 2
+        $removePreview = New-RemoveProfileDialog (Get-SelectedProfile)
+        try { Show-TestWindow $removePreview; Export-UiPreview $removePreview 'ui-check-RemoveProfile.png' 1.5 }
+        finally { $removePreview.Close() }
         $hwnd = (New-Object Windows.Interop.WindowInteropHelper($script:MainForm)).Handle
         $awareness = [AccountManagerDpi]::GetAwarenessFromDpiAwarenessContext([AccountManagerDpi]::GetWindowDpiAwarenessContext($hwnd))
         if ($awareness -ne 2) { throw '窗口没有启用每显示器 DPI 感知。' }
         $dpi = [AccountManagerDpi]::GetDpiForWindow($hwnd)
         $renderDpi = [Windows.Media.VisualTreeHelper]::GetDpi($script:MainForm).PixelsPerInchX
         Set-AccountList ([PSCustomObject]@{accounts=@(); current=$null})
-        if ($script:Buttons[0].IsEnabled -or $script:Buttons[5].IsEnabled) { throw '空列表仍可切换。' }
+        if ($script:Buttons[0].IsEnabled -or $script:Buttons[5].IsEnabled -or $script:Buttons[6].IsEnabled) { throw '空列表仍可切换或删除。' }
         Export-UiPreview $script:MainForm 'ui-check-empty.png'
-        $demo = [PSCustomObject]@{ id='preview'; active=$true; email='writer@example.com'; alias='pro'; auth_method='consumer'; project_id=''; region='' }
+        $demo = [PSCustomObject]@{ id='preview'; stored=$true; active=$true; email='writer@example.com'; alias='pro'; auth_method='consumer'; project_id=''; region='' }
         Set-AccountList ([PSCustomObject]@{accounts=@($demo); current=$demo})
         if ((Get-SelectedProfile).id -ne 'preview' -or !$script:Buttons[0].IsEnabled) { throw '配置选择状态检查失败。' }
         $script:MainForm.Width = $script:MainForm.MinWidth
@@ -324,7 +352,44 @@ if ($SelfTest) {
         finally { $formTimer.Stop() }
         if ($formCheck.Error) { throw $formCheck.Error }
         if (!$testDetails.Cloud -or $testDetails.Email -ne 'preview@example.com' -or $testDetails.Project -ne 'preview-project') { throw '账号表单返回值检查失败。' }
-        Write-Output "GUI_COMPONENTS_OK; PerMonitorDpiAware=True; WindowDpi=$dpi; RenderDpi=$renderDpi; PreviewScales=100,150,200; EmptyAndSelection=OK; DialogsAndValidation=OK"
+        # Exercise the real delete button and confirmation UI with a fake backend.
+        $script:RemoveTest = @{ Calls=0; LastId=$null; Error=$null; Confirm=$false; Rows=@($demo); Current=$demo }
+        function Get-AuthAccounts { [PSCustomObject]@{accounts=$script:RemoveTest.Rows; current=$script:RemoveTest.Current} }
+        function Remove-SavedProfile([string]$ProfileId) {
+            $script:RemoveTest.Calls++
+            $script:RemoveTest.LastId = $ProfileId
+            $script:RemoveTest.Rows = @($script:RemoveTest.Rows | Where-Object { $_.id -ne $ProfileId })
+        }
+        $script:Busy = $true
+        Update-SelectionState
+        if ($script:Buttons[6].IsEnabled) { throw '操作进行中仍允许删除。' }
+        $script:Busy = $false
+        Update-SelectionState
+        foreach ($confirm in @($false,$true)) {
+            $script:RemoveTest.Confirm = $confirm
+            $removeTimer = New-Object Windows.Threading.DispatcherTimer
+            $removeTimer.Interval = [TimeSpan]::FromMilliseconds(100)
+            $removeTimer.Add_Tick({
+                $removeTimer.Stop()
+                $testDialog = @($script:MainForm.OwnedWindows)[0]
+                try {
+                    if ($testDialog.FindName('ProfileEmail').Text -ne 'writer@example.com' -or !$testDialog.FindName('ProfileDetails').Text.Contains('pro')) { throw '删除确认未显示目标配置。' }
+                    if (!$testDialog.FindName('CancelRemoveButton').IsDefault -or $testDialog.FindName('CurrentNotice').Visibility -ne 'Visible') { throw '删除确认的默认按钮或当前登录提示不正确。' }
+                    if ($script:RemoveTest.Confirm) {
+                        $testDialog.FindName('ConfirmRemoveButton').RaiseEvent((New-Object Windows.RoutedEventArgs([Windows.Controls.Button]::ClickEvent)))
+                    } else { $testDialog.DialogResult = $false }
+                } catch { $script:RemoveTest.Error = $_; $testDialog.Close() }
+            })
+            try {
+                $removeTimer.Start()
+                $script:Buttons[6].RaiseEvent((New-Object Windows.RoutedEventArgs([Windows.Controls.Button]::ClickEvent)))
+            } finally { $removeTimer.Stop() }
+            if ($script:RemoveTest.Error) { throw $script:RemoveTest.Error }
+            if (!$confirm -and ($script:RemoveTest.Calls -ne 0 -or $list.Items.Count -ne 1)) { throw '取消删除仍改动了配置。' }
+        }
+        if ($script:RemoveTest.Calls -ne 1 -or $script:RemoveTest.LastId -ne 'preview' -or $list.Items.Count -ne 0 -or $script:Buttons[6].IsEnabled) { throw '确认删除或刷新列表失败。' }
+        if ($script:MainForm.FindName('CurrentEmail').Text -ne 'writer@example.com') { throw '删除保存配置后当前登录信息丢失。' }
+        Write-Output "GUI_COMPONENTS_OK; PerMonitorDpiAware=True; WindowDpi=$dpi; RenderDpi=$renderDpi; PreviewScales=100,150,200; EmptyAndSelection=OK; DialogsAndValidation=OK; DeleteCancelAndConfirm=OK"
     } finally { $script:MainForm.Close() }
     return
 }

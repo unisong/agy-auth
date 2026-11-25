@@ -64,6 +64,19 @@ function Resolve-AuthProfile([string]$Profile) {
     return $matches[0]
 }
 
+function Remove-SavedProfile {
+    param([Parameter(Mandatory=$true)][string]$ProfileId, [hashtable]$Environment = @{})
+    $data = Invoke-AuthJson -Arguments @('list', '--no-sync', '--no-usage') -Environment $Environment
+    $saved = @($data.accounts | Where-Object { $_.id -ceq $ProfileId -and $_.stored })
+    if ($saved.Count -ne 1) { throw '该配置已不存在或未保存，请刷新列表后重试。' }
+    # The GUI has already confirmed this specific ID. Never use --all or --logout.
+    $result = Invoke-AuthJson -Arguments @('remove', '--yes', $ProfileId) -Environment $Environment
+    if ($result.logged_out -or @($result.removed).Count -ne 1 -or $result.removed[0].id -cne $ProfileId) {
+        throw '删除结果与目标配置不一致，请刷新列表核对。'
+    }
+    return $result
+}
+
 function Start-OfficialDesktop {
     if (!(Test-Path -LiteralPath $script:Settings.desktopBinary -PathType Leaf)) { throw '未找到 Antigravity 客户端，请修改 settings.json 中的 desktopBinary。' }
     Start-Process -FilePath $script:Settings.desktopBinary -ArgumentList '--remote-debugging-port=0'
