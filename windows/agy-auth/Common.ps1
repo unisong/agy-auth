@@ -57,6 +57,23 @@ function Get-AuthAccounts {
     Invoke-AuthJson -Arguments @('list', '--no-sync', '--no-usage')
 }
 
+function Get-AliasValidationMessage([string]$Alias) {
+    if ($Alias -notmatch '\A[\p{L}0-9][\p{L}0-9_.-]*\z' -or $Alias -match '\A[0-9]+\z') {
+        return '别名以字母、汉字或数字开头，可包含点、下划线和短横线；不能是纯数字。'
+    }
+    if ([Text.Encoding]::UTF8.GetByteCount($Alias) -gt 32) { return '别名不能超过 32 个 UTF-8 字节（一般汉字每个占 3 字节）。' }
+}
+
+function Set-SavedProfileAlias {
+    param([Parameter(Mandatory=$true)][string]$ProfileId, [Parameter(Mandatory=$true)][string]$Alias, [hashtable]$Environment = @{})
+    $data = Invoke-AuthJson -Arguments @('list', '--no-sync', '--no-usage') -Environment $Environment
+    $saved = @($data.accounts | Where-Object { $_.stored -and $_.id -ceq $ProfileId })
+    if ($saved.Count -ne 1) { throw '该配置已不存在或未保存，请刷新列表。' }
+    if (@($data.accounts | Where-Object { $_.id -cne $ProfileId -and $_.alias -eq $Alias }).Count) { throw '此别名已被其他配置使用。' }
+    $result = Invoke-AuthJson -Arguments @('alias','set',$ProfileId,$Alias) -Environment $Environment
+    if ($result.id -cne $ProfileId -or $result.alias -cne $Alias) { throw '别名修改结果与目标配置不一致，请刷新列表。' }
+}
+
 function Resolve-AuthProfile([string]$Profile) {
     $data = Get-AuthAccounts
     $matches = @($data.accounts | Where-Object { $_.id -eq $Profile -or $_.alias -eq $Profile })

@@ -37,6 +37,15 @@ try {
     $liveHash = (Get-FileHash -LiteralPath $environment.AGY_AUTH_AGY_TOKEN_FILE).Hash
     $settingsHash = (Get-FileHash -LiteralPath $settingsPath).Hash
     $rejected = $false
+    try { Set-SavedProfileAlias -ProfileId $pro.id -Alias 'FIXTURE-CLOUD' -Environment $environment }
+    catch { if ($_.Exception.Message -notlike '*已被其他配置使用*') { throw }; $rejected = $true }
+    if (!$rejected) { throw '重复别名未被拒绝。' }
+    Set-SavedProfileAlias -ProfileId $pro.id -Alias '测试-pro' -Environment $environment
+    $renamed = Invoke-AuthJson -Arguments @('list','--no-sync','--no-usage') -Environment $environment
+    if (@($renamed.accounts | Where-Object { $_.id -ceq $pro.id -and $_.alias -ceq '测试-pro' }).Count -ne 1 -or $renamed.current.id -cne $cloud.id -or $renamed.current.alias -cne 'fixture-cloud') { throw '别名未持久化，或修改了同邮箱的其他配置。' }
+    if ((Get-FileHash -LiteralPath $environment.AGY_AUTH_AGY_TOKEN_FILE).Hash -ne $liveHash -or (Get-FileHash -LiteralPath $settingsPath).Hash -ne $settingsHash) { throw '修改别名影响了当前凭据或设置。' }
+    Write-Output 'WINDOWS_ISOLATED_PROFILE_ALIAS_OK'
+    $rejected = $false
     try { $null = Remove-SavedProfile -ProfileId $pro.email -Environment $environment }
     catch { $rejected = $true }
     if (!$rejected) { throw '删除操作接受了邮箱而不是精确配置 ID。' }

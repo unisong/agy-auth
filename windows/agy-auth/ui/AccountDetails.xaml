@@ -8,7 +8,7 @@
     <TextBox x:Name="EmailInput"/>
     <TextBlock Text="配置别名" Margin="0,16,0,7"/>
     <TextBox x:Name="AliasInput"/>
-    <TextBlock Text="例如 pro 或 cloud-credit；使用英文、数字、点、下划线或短横线。" Style="{StaticResource Muted}" Margin="0,6,0,18"/>
+    <TextBlock Text="例如 pro、cloud-credit 或 工作账号。" Style="{StaticResource Muted}" Margin="0,6,0,18"/>
     <CheckBox x:Name="CloudCheck" Content="使用 Cloud 按量付费模式" VerticalContentAlignment="Center"/>
     <TextBlock Text="Cloud 项目 ID" Margin="0,16,0,7"/>
     <TextBox x:Name="ProjectInput" IsEnabled="False"/>

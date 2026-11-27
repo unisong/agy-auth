@@ -59,7 +59,7 @@ function Request-AccountDetails {
     $dialog.FindName('NextButton').Add_Click({
         $message = ''
         if ($emailInput.Text.Trim() -notmatch '^[^\s@]+@[^\s@]+\.[^\s@]+$') { $message = '请填写要授权的邮箱。' }
-        elseif ($aliasInput.Text.Trim() -notmatch '^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,39}$') { $message = '别名请使用 1–40 个英文字母、数字、点、下划线或短横线。' }
+        elseif (($aliasError = Get-AliasValidationMessage $aliasInput.Text.Trim())) { $message = $aliasError }
         elseif ($cloudCheck.IsChecked -and $projectInput.Text.Trim() -notmatch '^[a-z][a-z0-9-]{4,61}[a-z0-9]$') { $message = '请填写有效的 Google Cloud 项目 ID。' }
         if ($message) { $validation.Text = $message; $validation.Visibility = 'Visible'; return }
         $dialog.DialogResult = $true
@@ -84,50 +84,29 @@ function New-RemoveProfileDialog($Account) {
     return $dialog
 }
 
-$script:NotesDirectory = if ($SelfTest) { Join-Path ([IO.Path]::GetTempPath()) ('agy-notes-test-' + [Guid]::NewGuid().ToString('N')) } else { Join-Path $script:DeploymentRoot 'private\profile-notes' }
-
-function Get-ProfileNotePath([string]$ProfileId) {
-    if ($ProfileId -cnotmatch '\A[a-zA-Z0-9_-]+\z') { throw '配置 ID 无效，请刷新列表。' }
-    Join-Path $script:NotesDirectory ('note-' + $ProfileId + '.txt')
-}
-
-function Get-ProfileNote([string]$ProfileId) {
-    $path = Get-ProfileNotePath $ProfileId
-    if ([IO.File]::Exists($path)) { return [IO.File]::ReadAllText($path) }
-    return ''
-}
-
-function Set-ProfileNote([string]$ProfileId, [string]$Note) {
-    $path = Get-ProfileNotePath $ProfileId
-    if ([string]::IsNullOrWhiteSpace($Note)) {
-        if ([IO.File]::Exists($path)) { [IO.File]::Delete($path) }
-        return
-    }
-    $null = [IO.Directory]::CreateDirectory($script:NotesDirectory)
-    $temp = Join-Path $script:NotesDirectory ([IO.Path]::GetRandomFileName())
-    try {
-        [IO.File]::WriteAllText($temp, $Note)
-        if ([IO.File]::Exists($path)) { [IO.File]::Replace($temp, $path, [System.Management.Automation.Language.NullString]::Value) }
-        else { [IO.File]::Move($temp, $path) }
-    } finally { [IO.File]::Delete($temp) }
-}
-
-function Edit-SelectedNote {
+function Edit-SelectedAlias {
     $row = $list.SelectedItem
     if (!$row.Account.stored -or $script:Busy) { return }
-    $dialog = New-ManagerWindow 'EditNote'
+    $dialog = New-ManagerWindow 'EditAlias'
     $dialog.Owner = $script:MainForm
     $dialog.FindName('ProfileEmail').Text = $row.Email
-    $dialog.FindName('ProfileDetails').Text = "$($row.Alias) · $($row.Mode) · $($row.Project)"
-    $inputBox = $dialog.FindName('NoteInput')
-    $inputBox.Text = $row.Note
+    $dialog.FindName('ProfileDetails').Text = "$($row.Mode) · $($row.Project)"
+    $inputBox = $dialog.FindName('AliasInput')
+    $inputBox.Text = [string]$row.Account.alias
+    $validation = $dialog.FindName('ValidationMessage')
     $dialog.Add_ContentRendered({ [void]$inputBox.Focus(); $inputBox.SelectAll() })
-    $dialog.FindName('SaveNoteButton').Add_Click({ $dialog.DialogResult = $true })
-    if ($dialog.ShowDialog() -ne $true) { return }
-    $note = $inputBox.Text.Trim()
-    Set-ProfileNote $row.Account.id $note
-    $row.Note = $note
-    $list.Items.Refresh()
+    $dialog.FindName('SaveAliasButton').Add_Click({
+        $alias = $inputBox.Text.Trim()
+        if ($alias -ceq [string]$row.Account.alias) { $dialog.DialogResult = $false; return }
+        $message = Get-AliasValidationMessage $alias
+        if (!$message) {
+            try { Set-SavedProfileAlias -ProfileId $row.Account.id -Alias $alias }
+            catch { $message = $_.Exception.Message }
+        }
+        if ($message) { $validation.Text = $message; $validation.Visibility = 'Visible'; [void]$inputBox.Focus(); return }
+        $dialog.DialogResult = $true
+    })
+    if ($dialog.ShowDialog() -eq $true) { Refresh-AccountList }
 }
 
 function Remove-SelectedProfile {
@@ -135,7 +114,7 @@ function Remove-SelectedProfile {
     if (!$account.stored) { throw '请选择已保存的配置。' }
     $dialog = New-RemoveProfileDialog $account
     if ($dialog.ShowDialog() -ne $true) { return }
-    Run-UiOperation { $null = Remove-SavedProfile -ProfileId $account.id; Set-ProfileNote $account.id '' }
+    Run-UiOperation { $null = Remove-SavedProfile -ProfileId $account.id }
 }
 
 function Add-GoogleAccount($Details) {
@@ -223,7 +202,7 @@ function Add-GoogleAccount($Details) {
 
 $script:MainForm = New-ManagerWindow 'Main'
 $list = $script:MainForm.FindName('AccountList')
-$script:Buttons = @('SwitchButton','PreviousButton','AddButton','SaveButton','RefreshButton','ShortcutButton','RemoveButton','EditNoteButton') | ForEach-Object { $script:MainForm.FindName($_) }
+$script:Buttons = @('SwitchButton','PreviousButton','AddButton','SaveButton','RefreshButton','ShortcutButton','RemoveButton','EditAliasButton') | ForEach-Object { $script:MainForm.FindName($_) }
 $script:Busy = $false
 
 function Update-SelectionState {
@@ -243,7 +222,6 @@ function Set-AccountList($Data) {
             $cloud = $account.auth_method -eq 'gcp'
             [PSCustomObject]@{
                 Account=$account; Email=[string]$account.email
-                Note=$(if ($account.stored) { Get-ProfileNote $account.id } else { '' })
                 Alias=$(if ($account.alias) { [string]$account.alias } else { '未设置别名' })
                 Mode=$(if ($cloud) { 'Cloud 计费' } else { '订阅模式' })
                 ModeBackground=$(if ($cloud) { '#EFF6FF' } else { '#F3EEFF' })
@@ -293,7 +271,7 @@ function Get-SelectedProfile {
 }
 
 $list.Add_SelectionChanged({ Update-SelectionState })
-$script:Buttons[7].Add_Click({ try { Edit-SelectedNote } catch { Show-OperationError $_ } })
+$script:Buttons[7].Add_Click({ try { Edit-SelectedAlias } catch { Show-OperationError $_ } })
 $script:Buttons[6].Add_Click({ try { Remove-SelectedProfile } catch { Show-OperationError $_ } })
 $script:Buttons[0].Add_Click({ Run-UiOperation { $account = Get-SelectedProfile; $null = Switch-AuthProfile $account.id } })
 $script:Buttons[1].Add_Click({ Run-UiOperation { $null = Switch-AuthProfile '-' } })
@@ -347,7 +325,7 @@ if ($SelfTest) {
         $Window.UpdateLayout()
     }
     try {
-        if ($list.Columns.Count -ne 5 -or $script:Buttons.Count -ne 8) { throw '界面组件检查失败。' }
+        if ($list.Columns.Count -ne 4 -or $script:Buttons.Count -ne 8) { throw '界面组件检查失败。' }
         Show-TestWindow $script:MainForm
         $script:Buttons[4].RaiseEvent((New-Object Windows.RoutedEventArgs([Windows.Controls.Button]::ClickEvent)))
         Export-UiPreview $script:MainForm 'ui-check.png'
@@ -368,32 +346,40 @@ if ($SelfTest) {
         Set-AccountList ([PSCustomObject]@{accounts=@($demo); current=$demo})
         if ((Get-SelectedProfile).id -ne 'preview' -or !$script:Buttons[0].IsEnabled) { throw '配置选择状态检查失败。' }
         $sibling = (Get-AuthAccounts).current
-        $noteData = [PSCustomObject]@{accounts=@($demo,$sibling); current=$demo}
-        Set-ProfileNote $sibling.id '独立项目'
-        Set-AccountList $noteData
-        $expectedNote = ''
-        foreach ($edit in @(@('写作账号',$true),@('未保存',$false),@('修改后的备注',$true),@('',$true),@('个人订阅',$true))) {
-            $noteCheck = @{ Error=$null }
-            $noteTimer = New-Object Windows.Threading.DispatcherTimer
-            $noteTimer.Interval = [TimeSpan]::FromMilliseconds(100)
-            $noteTimer.Add_Tick({
-                $noteTimer.Stop()
+        $aliasData = [PSCustomObject]@{accounts=@($demo,$sibling); current=$demo}
+        $sibling.active = $false
+        $aliasCheck = @{ Calls=0; Error=$null }
+        function Get-AuthAccounts { $aliasData }
+        function Set-SavedProfileAlias([string]$ProfileId, [string]$Alias) {
+            if ($ProfileId -cne $sibling.id) { throw '选中了错误的配置。' }
+            $aliasCheck.Calls++
+            $sibling.alias = $Alias
+        }
+        Set-AccountList $aliasData
+        $list.SelectedIndex = 1
+        foreach ($confirmAlias in @($false,$true)) {
+            $aliasTimer = New-Object Windows.Threading.DispatcherTimer
+            $aliasTimer.Interval = [TimeSpan]::FromMilliseconds(100)
+            $aliasTimer.Add_Tick({
+                $aliasTimer.Stop()
                 $testDialog = @($script:MainForm.OwnedWindows)[0]
                 try {
-                    $field = $testDialog.FindName('NoteInput')
-                    if ($field.Text -cne $expectedNote) { throw '未显示已有备注。' }
-                    $field.Text = $edit[0]
-                    if ($edit[1]) { $testDialog.FindName('SaveNoteButton').RaiseEvent((New-Object Windows.RoutedEventArgs([Windows.Controls.Button]::ClickEvent))) }
+                    $field = $testDialog.FindName('AliasInput')
+                    $save = $testDialog.FindName('SaveAliasButton')
+                    if ($field.Text -cne 'cloud-credit') { throw '未显示所选配置的原别名。' }
+                    $field.Text = '123'
+                    $save.RaiseEvent((New-Object Windows.RoutedEventArgs([Windows.Controls.Button]::ClickEvent)))
+                    if ($testDialog.FindName('ValidationMessage').Visibility -ne 'Visible' -or $aliasCheck.Calls) { throw '无效别名未被拦截。' }
+                    $field.Text = '工作-cloud'
+                    if ($confirmAlias) { $save.RaiseEvent((New-Object Windows.RoutedEventArgs([Windows.Controls.Button]::ClickEvent))) }
                     else { $testDialog.DialogResult = $false }
-                } catch { $noteCheck.Error = $_; $testDialog.Close() }
+                } catch { $aliasCheck.Error = $_; $testDialog.Close() }
             })
-            try { $noteTimer.Start(); $script:Buttons[7].RaiseEvent((New-Object Windows.RoutedEventArgs([Windows.Controls.Button]::ClickEvent))) }
-            finally { $noteTimer.Stop() }
-            if ($noteCheck.Error) { throw $noteCheck.Error }
-            if ($edit[1]) { $expectedNote = $edit[0] }
-            if ($list.SelectedItem.Note -cne $expectedNote) { throw '保存或取消备注后列表显示错误。' }
-            Set-AccountList $noteData
-            if ($list.SelectedItem.Note -cne $expectedNote -or $list.Items[1].Note -cne '独立项目') { throw '备注未持久保存或影响了同邮箱的其他配置。' }
+            try { $aliasTimer.Start(); $script:Buttons[7].RaiseEvent((New-Object Windows.RoutedEventArgs([Windows.Controls.Button]::ClickEvent))) }
+            finally { $aliasTimer.Stop() }
+            if ($aliasCheck.Error) { throw $aliasCheck.Error }
+            $expectedAlias = if ($confirmAlias) { '工作-cloud' } else { 'cloud-credit' }
+            if ($aliasCheck.Calls -ne [int]$confirmAlias -or $list.SelectedItem.Alias -cne $expectedAlias -or $list.Items[0].Alias -cne 'pro') { throw '保存或取消别名后列表状态错误。' }
         }
         Set-AccountList ([PSCustomObject]@{accounts=@($demo); current=$demo})
         $script:MainForm.Width = $script:MainForm.MinWidth
@@ -467,15 +453,8 @@ if ($SelfTest) {
         }
         if ($script:RemoveTest.Calls -ne 1 -or $script:RemoveTest.LastId -ne 'preview' -or $list.Items.Count -ne 0 -or $script:Buttons[6].IsEnabled) { throw '确认删除或刷新列表失败。' }
         if ($script:MainForm.FindName('CurrentEmail').Text -ne 'writer@example.com') { throw '删除保存配置后当前登录信息丢失。' }
-        if ((Get-ProfileNote $demo.id) -or (Get-ProfileNote $sibling.id) -cne '独立项目') { throw '删除配置时备注清理范围不正确。' }
-        Write-Output "GUI_COMPONENTS_OK; PerMonitorDpiAware=True; WindowDpi=$dpi; RenderDpi=$renderDpi; PreviewScales=100,150,200; EmptyAndSelection=OK; DialogsAndValidation=OK; DeleteCancelAndConfirm=OK; ProfileNotes=OK"
-    } finally {
-        $script:MainForm.Close()
-        if ([IO.Directory]::Exists($script:NotesDirectory)) {
-            foreach ($testId in @('preview','preview-cloud')) { [IO.File]::Delete((Get-ProfileNotePath $testId)) }
-            [IO.Directory]::Delete($script:NotesDirectory)
-        }
-    }
+        Write-Output "GUI_COMPONENTS_OK; PerMonitorDpiAware=True; WindowDpi=$dpi; RenderDpi=$renderDpi; PreviewScales=100,150,200; EmptyAndSelection=OK; DialogsAndValidation=OK; DeleteCancelAndConfirm=OK; EditAlias=OK"
+    } finally { $script:MainForm.Close() }
     return
 }
 $script:MainForm.Add_ContentRendered({ try { Refresh-AccountList } catch { Show-OperationError $_ } })
