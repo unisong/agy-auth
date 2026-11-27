@@ -44,6 +44,9 @@
             <DataGridTemplateColumn Header="Cloud 项目 / 地区" Width="2.3*"><DataGridTemplateColumn.CellTemplate><DataTemplate>
               <StackPanel ToolTip="{Binding Project}"><TextBlock Text="{Binding Project}" FontSize="12" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding Region}" FontSize="12" Foreground="#64748B" Margin="0,5,0,0"/></StackPanel>
             </DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+            <DataGridTemplateColumn Header="备注" Width="1.5*"><DataGridTemplateColumn.CellTemplate><DataTemplate>
+              <TextBlock Text="{Binding Note}" ToolTip="{Binding Note}" FontSize="13" TextTrimming="CharacterEllipsis"/>
+            </DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
             <DataGridTemplateColumn Header="状态" Width="85"><DataGridTemplateColumn.CellTemplate><DataTemplate><TextBlock Text="{Binding Status}" Foreground="#15805A" FontSize="12"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
           </DataGrid.Columns>
         </DataGrid>
@@ -56,6 +59,7 @@
     <Grid Grid.Row="4" Margin="0,16,0,14">
       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
       <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+        <Button x:Name="EditNoteButton" Content="编辑备注" IsEnabled="False" Margin="0,0,8,0"/>
         <Button x:Name="RemoveButton" Content="删除配置" Foreground="#B42318" BorderBrush="#F0C4BE" IsEnabled="False" Margin="0,0,8,0" ToolTip="从本机账号库移除选中配置，保留当前登录"/>
         <Button x:Name="ShortcutButton" Content="生成一键入口" IsEnabled="False"/>
         <TextBlock x:Name="SelectionHint" Text="请先选择一个配置" FontSize="12" Foreground="#64748B" VerticalAlignment="Center" Margin="12,0,12,0" MaxWidth="180" TextTrimming="CharacterEllipsis"/>

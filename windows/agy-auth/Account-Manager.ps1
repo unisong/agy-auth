@@ -84,12 +84,58 @@ function New-RemoveProfileDialog($Account) {
     return $dialog
 }
 
+$script:NotesDirectory = if ($SelfTest) { Join-Path ([IO.Path]::GetTempPath()) ('agy-notes-test-' + [Guid]::NewGuid().ToString('N')) } else { Join-Path $script:DeploymentRoot 'private\profile-notes' }
+
+function Get-ProfileNotePath([string]$ProfileId) {
+    if ($ProfileId -cnotmatch '\A[a-zA-Z0-9_-]+\z') { throw '配置 ID 无效，请刷新列表。' }
+    Join-Path $script:NotesDirectory ('note-' + $ProfileId + '.txt')
+}
+
+function Get-ProfileNote([string]$ProfileId) {
+    $path = Get-ProfileNotePath $ProfileId
+    if ([IO.File]::Exists($path)) { return [IO.File]::ReadAllText($path) }
+    return ''
+}
+
+function Set-ProfileNote([string]$ProfileId, [string]$Note) {
+    $path = Get-ProfileNotePath $ProfileId
+    if ([string]::IsNullOrWhiteSpace($Note)) {
+        if ([IO.File]::Exists($path)) { [IO.File]::Delete($path) }
+        return
+    }
+    $null = [IO.Directory]::CreateDirectory($script:NotesDirectory)
+    $temp = Join-Path $script:NotesDirectory ([IO.Path]::GetRandomFileName())
+    try {
+        [IO.File]::WriteAllText($temp, $Note)
+        if ([IO.File]::Exists($path)) { [IO.File]::Replace($temp, $path, [System.Management.Automation.Language.NullString]::Value) }
+        else { [IO.File]::Move($temp, $path) }
+    } finally { [IO.File]::Delete($temp) }
+}
+
+function Edit-SelectedNote {
+    $row = $list.SelectedItem
+    if (!$row.Account.stored -or $script:Busy) { return }
+    $dialog = New-ManagerWindow 'EditNote'
+    $dialog.Owner = $script:MainForm
+    $dialog.FindName('ProfileEmail').Text = $row.Email
+    $dialog.FindName('ProfileDetails').Text = "$($row.Alias) · $($row.Mode) · $($row.Project)"
+    $inputBox = $dialog.FindName('NoteInput')
+    $inputBox.Text = $row.Note
+    $dialog.Add_ContentRendered({ [void]$inputBox.Focus(); $inputBox.SelectAll() })
+    $dialog.FindName('SaveNoteButton').Add_Click({ $dialog.DialogResult = $true })
+    if ($dialog.ShowDialog() -ne $true) { return }
+    $note = $inputBox.Text.Trim()
+    Set-ProfileNote $row.Account.id $note
+    $row.Note = $note
+    $list.Items.Refresh()
+}
+
 function Remove-SelectedProfile {
     $account = Get-SelectedProfile
     if (!$account.stored) { throw '请选择已保存的配置。' }
     $dialog = New-RemoveProfileDialog $account
     if ($dialog.ShowDialog() -ne $true) { return }
-    Run-UiOperation { $null = Remove-SavedProfile -ProfileId $account.id }
+    Run-UiOperation { $null = Remove-SavedProfile -ProfileId $account.id; Set-ProfileNote $account.id '' }
 }
 
 function Add-GoogleAccount($Details) {
@@ -177,7 +223,7 @@ function Add-GoogleAccount($Details) {
 
 $script:MainForm = New-ManagerWindow 'Main'
 $list = $script:MainForm.FindName('AccountList')
-$script:Buttons = @('SwitchButton','PreviousButton','AddButton','SaveButton','RefreshButton','ShortcutButton','RemoveButton') | ForEach-Object { $script:MainForm.FindName($_) }
+$script:Buttons = @('SwitchButton','PreviousButton','AddButton','SaveButton','RefreshButton','ShortcutButton','RemoveButton','EditNoteButton') | ForEach-Object { $script:MainForm.FindName($_) }
 $script:Busy = $false
 
 function Update-SelectionState {
@@ -185,6 +231,7 @@ function Update-SelectionState {
     $script:Buttons[0].IsEnabled = !$script:Busy -and $null -ne $selected
     $script:Buttons[5].IsEnabled = !$script:Busy -and $null -ne $selected
     $script:Buttons[6].IsEnabled = !$script:Busy -and $null -ne $selected -and $selected.Account.stored
+    $script:Buttons[7].IsEnabled = $script:Buttons[6].IsEnabled
     $script:MainForm.FindName('SelectionHint').Text = $(if ($script:Busy) { '正在处理，请稍候…' } elseif ($selected) { '已选择：' + $selected.Alias } else { '请先选择一个配置' })
 }
 
@@ -196,6 +243,7 @@ function Set-AccountList($Data) {
             $cloud = $account.auth_method -eq 'gcp'
             [PSCustomObject]@{
                 Account=$account; Email=[string]$account.email
+                Note=$(if ($account.stored) { Get-ProfileNote $account.id } else { '' })
                 Alias=$(if ($account.alias) { [string]$account.alias } else { '未设置别名' })
                 Mode=$(if ($cloud) { 'Cloud 计费' } else { '订阅模式' })
                 ModeBackground=$(if ($cloud) { '#EFF6FF' } else { '#F3EEFF' })
@@ -245,6 +293,7 @@ function Get-SelectedProfile {
 }
 
 $list.Add_SelectionChanged({ Update-SelectionState })
+$script:Buttons[7].Add_Click({ try { Edit-SelectedNote } catch { Show-OperationError $_ } })
 $script:Buttons[6].Add_Click({ try { Remove-SelectedProfile } catch { Show-OperationError $_ } })
 $script:Buttons[0].Add_Click({ Run-UiOperation { $account = Get-SelectedProfile; $null = Switch-AuthProfile $account.id } })
 $script:Buttons[1].Add_Click({ Run-UiOperation { $null = Switch-AuthProfile '-' } })
@@ -298,7 +347,7 @@ if ($SelfTest) {
         $Window.UpdateLayout()
     }
     try {
-        if ($list.Columns.Count -ne 4 -or $script:Buttons.Count -ne 7) { throw '界面组件检查失败。' }
+        if ($list.Columns.Count -ne 5 -or $script:Buttons.Count -ne 8) { throw '界面组件检查失败。' }
         Show-TestWindow $script:MainForm
         $script:Buttons[4].RaiseEvent((New-Object Windows.RoutedEventArgs([Windows.Controls.Button]::ClickEvent)))
         Export-UiPreview $script:MainForm 'ui-check.png'
@@ -313,11 +362,40 @@ if ($SelfTest) {
         $dpi = [AccountManagerDpi]::GetDpiForWindow($hwnd)
         $renderDpi = [Windows.Media.VisualTreeHelper]::GetDpi($script:MainForm).PixelsPerInchX
         Set-AccountList ([PSCustomObject]@{accounts=@(); current=$null})
-        if ($script:Buttons[0].IsEnabled -or $script:Buttons[5].IsEnabled -or $script:Buttons[6].IsEnabled) { throw '空列表仍可切换或删除。' }
+        if ($script:Buttons[0].IsEnabled -or $script:Buttons[5].IsEnabled -or $script:Buttons[6].IsEnabled -or $script:Buttons[7].IsEnabled) { throw '空列表仍可操作配置。' }
         Export-UiPreview $script:MainForm 'ui-check-empty.png'
         $demo = [PSCustomObject]@{ id='preview'; stored=$true; active=$true; email='writer@example.com'; alias='pro'; auth_method='consumer'; project_id=''; region='' }
         Set-AccountList ([PSCustomObject]@{accounts=@($demo); current=$demo})
         if ((Get-SelectedProfile).id -ne 'preview' -or !$script:Buttons[0].IsEnabled) { throw '配置选择状态检查失败。' }
+        $sibling = (Get-AuthAccounts).current
+        $noteData = [PSCustomObject]@{accounts=@($demo,$sibling); current=$demo}
+        Set-ProfileNote $sibling.id '独立项目'
+        Set-AccountList $noteData
+        $expectedNote = ''
+        foreach ($edit in @(@('写作账号',$true),@('未保存',$false),@('修改后的备注',$true),@('',$true),@('个人订阅',$true))) {
+            $noteCheck = @{ Error=$null }
+            $noteTimer = New-Object Windows.Threading.DispatcherTimer
+            $noteTimer.Interval = [TimeSpan]::FromMilliseconds(100)
+            $noteTimer.Add_Tick({
+                $noteTimer.Stop()
+                $testDialog = @($script:MainForm.OwnedWindows)[0]
+                try {
+                    $field = $testDialog.FindName('NoteInput')
+                    if ($field.Text -cne $expectedNote) { throw '未显示已有备注。' }
+                    $field.Text = $edit[0]
+                    if ($edit[1]) { $testDialog.FindName('SaveNoteButton').RaiseEvent((New-Object Windows.RoutedEventArgs([Windows.Controls.Button]::ClickEvent))) }
+                    else { $testDialog.DialogResult = $false }
+                } catch { $noteCheck.Error = $_; $testDialog.Close() }
+            })
+            try { $noteTimer.Start(); $script:Buttons[7].RaiseEvent((New-Object Windows.RoutedEventArgs([Windows.Controls.Button]::ClickEvent))) }
+            finally { $noteTimer.Stop() }
+            if ($noteCheck.Error) { throw $noteCheck.Error }
+            if ($edit[1]) { $expectedNote = $edit[0] }
+            if ($list.SelectedItem.Note -cne $expectedNote) { throw '保存或取消备注后列表显示错误。' }
+            Set-AccountList $noteData
+            if ($list.SelectedItem.Note -cne $expectedNote -or $list.Items[1].Note -cne '独立项目') { throw '备注未持久保存或影响了同邮箱的其他配置。' }
+        }
+        Set-AccountList ([PSCustomObject]@{accounts=@($demo); current=$demo})
         $script:MainForm.Width = $script:MainForm.MinWidth
         $script:MainForm.Height = $script:MainForm.MinHeight
         Export-UiPreview $script:MainForm 'ui-check-compact.png'
@@ -362,7 +440,7 @@ if ($SelfTest) {
         }
         $script:Busy = $true
         Update-SelectionState
-        if ($script:Buttons[6].IsEnabled) { throw '操作进行中仍允许删除。' }
+        if ($script:Buttons[6].IsEnabled -or $script:Buttons[7].IsEnabled) { throw '操作进行中仍允许删除或编辑。' }
         $script:Busy = $false
         Update-SelectionState
         foreach ($confirm in @($false,$true)) {
@@ -389,8 +467,15 @@ if ($SelfTest) {
         }
         if ($script:RemoveTest.Calls -ne 1 -or $script:RemoveTest.LastId -ne 'preview' -or $list.Items.Count -ne 0 -or $script:Buttons[6].IsEnabled) { throw '确认删除或刷新列表失败。' }
         if ($script:MainForm.FindName('CurrentEmail').Text -ne 'writer@example.com') { throw '删除保存配置后当前登录信息丢失。' }
-        Write-Output "GUI_COMPONENTS_OK; PerMonitorDpiAware=True; WindowDpi=$dpi; RenderDpi=$renderDpi; PreviewScales=100,150,200; EmptyAndSelection=OK; DialogsAndValidation=OK; DeleteCancelAndConfirm=OK"
-    } finally { $script:MainForm.Close() }
+        if ((Get-ProfileNote $demo.id) -or (Get-ProfileNote $sibling.id) -cne '独立项目') { throw '删除配置时备注清理范围不正确。' }
+        Write-Output "GUI_COMPONENTS_OK; PerMonitorDpiAware=True; WindowDpi=$dpi; RenderDpi=$renderDpi; PreviewScales=100,150,200; EmptyAndSelection=OK; DialogsAndValidation=OK; DeleteCancelAndConfirm=OK; ProfileNotes=OK"
+    } finally {
+        $script:MainForm.Close()
+        if ([IO.Directory]::Exists($script:NotesDirectory)) {
+            foreach ($testId in @('preview','preview-cloud')) { [IO.File]::Delete((Get-ProfileNotePath $testId)) }
+            [IO.Directory]::Delete($script:NotesDirectory)
+        }
+    }
     return
 }
 $script:MainForm.Add_ContentRendered({ try { Refresh-AccountList } catch { Show-OperationError $_ } })
